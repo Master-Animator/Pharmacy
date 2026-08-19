@@ -1,6 +1,6 @@
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { api } from "@/lib/api";
 import {
@@ -2967,7 +2967,7 @@ function Tracker() {
   const [returnsLoading, setReturnsLoading] = useState(false);
   const [printingBill, setPrintingBill] = useState(false);
   const [trackerPrintData, setTrackerPrintData] = useState(null);
-  const loadBills = async () => {
+  const loadBills = useCallback(async () => {
     setLoading(true);
 
     const { data, error } = await supabase.rpc("get_bills", {
@@ -2989,11 +2989,11 @@ function Tracker() {
     }
 
     setLoading(false);
-  };
+  }, [search, status, paymentMode]);
 
   useEffect(() => {
     loadBills();
-  }, [status, paymentMode]);
+  }, [loadBills]);
 
   const openBill = async (bill) => {
     setSelectedBill(null);
