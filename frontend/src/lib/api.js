@@ -72,6 +72,9 @@ export const api = {
     callSingle("get_bill_details", {
       p_bill_id: billId,
     }),
+  getPharmacyDetails: () =>
+    callSingle("get_pharmacy_details"),
+  
   voidBill: (billId) =>
     call("void_bill", {
       p_bill_id: billId,

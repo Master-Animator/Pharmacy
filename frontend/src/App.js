@@ -13,6 +13,7 @@ import {
   PackageSearch,
   Pill,
   Plus,
+  Printer,
   Search,
   Settings2,
   ShieldCheck,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import "@/App.css";
+import { set } from "lodash";
 
 const navItems = [
   { id: "billing", label: "Billing", icon: FileText },
@@ -289,6 +291,7 @@ function Billing() {
   const [items, setItems] = useState([]);
 
   const [patientName, setPatientName] = useState("");
+  const [patientPhone, setPatientPhone] = useState("");
   const [doctorName, setDoctorName] = useState("");
   const [paymentMode, setPaymentMode] = useState("Cash");
   const [overallDiscount, setOverallDiscount] = useState(0);
@@ -296,6 +299,11 @@ function Billing() {
   const [loading, setLoading] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
   const [creatingBill, setCreatingBill] = useState(false);
+
+  const [showBillActions, setShowBillActions] = useState(false);
+  const [createdBill, setCreatedBill] = useState(null);
+  const [printingBill, setPrintingBill] = useState(false);
+  const [printData, setPrintData] = useState(null);
 
   const search = async (value) => {
     setQuery(value);
@@ -565,82 +573,160 @@ function Billing() {
     !creatingBill;
 
   const generateBill = async () => {
-    if (!patientName.trim()) {
-      toast.error("Patient name is required");
-      return;
-    }
+  if (!patientName.trim()) {
+    toast.error("Patient name is required");
+    return;
+  }
 
-    if (!items.length) {
-      toast.error("Add at least one medicine");
-      return;
-    }
+  if (!items.length) {
+    toast.error("Add at least one medicine");
+    return;
+  }
 
-    if (
-      paymentMode !== "Cash" &&
-      paymentMode !== "UPI"
-    ) {
-      toast.error("Payment mode must be Cash or UPI");
-      return;
-    }
+  if (
+    paymentMode !== "Cash" &&
+    paymentMode !== "UPI"
+  ) {
+    toast.error("Payment mode must be Cash or UPI");
+    return;
+  }
 
-    setCreatingBill(true);
+  setCreatingBill(true);
 
-    const billItems = calculatedItems.map(
-      (item) => ({
-        medicine_id: item.medicine.id,
-        batch_id: item.batch.id,
-        quantity: item.quantity,
-        item_discount_percent:
-          item.itemDiscountPercent,
-      })
+  const billItems = calculatedItems.map((item) => ({
+    medicine_id: item.medicine.id,
+    batch_id: item.batch.id,
+    quantity: item.quantity,
+    item_discount_percent:
+      item.itemDiscountPercent,
+  }));
+
+  const { data, error } =
+    await supabase.rpc("create_bill", {
+      p_patient_name: patientName.trim(),
+      p_patient_phone: patientPhone.trim() || null,
+      p_doctor_name:
+        doctorName.trim() || null,
+      p_payment_mode: paymentMode,
+      p_overall_discount_percent:
+        overallDiscountPercent,
+      p_items: billItems,
+    });
+
+  if (error) {
+    console.error(
+      "create_bill error:",
+      error
     );
 
-    const { data, error } =
-      await supabase.rpc("create_bill", {
-        p_patient_name: patientName.trim(),
-        p_doctor_name:
-          doctorName.trim() || null,
-        p_payment_mode: paymentMode,
-        p_overall_discount_percent:
-          overallDiscountPercent,
-        p_items: billItems,
-      });
-
-    if (error) {
-      console.error(
-        "create_bill error:",
-        error
-      );
-
-      toast.error(
-        error.message ||
-          "Unable to create bill"
-      );
-
-      setCreatingBill(false);
-      return;
-    }
-
-    const result = data || {};
-
-    toast.success(
-      result.bill_number
-        ? `Bill ${result.bill_number} created successfully`
-        : "Bill created successfully"
+    toast.error(
+      error.message ||
+        "Unable to create bill"
     );
-
-    setPatientName("");
-    setDoctorName("");
-    setPaymentMode("Cash");
-    setOverallDiscount(0);
-    setItems([]);
-    setSelected(null);
-    setBatches([]);
-    setQuery("");
-    setMedicines([]);
 
     setCreatingBill(false);
-  };
+    return;
+  }
+
+  const result = data || {};
+
+  toast.success(
+    result.bill_number
+      ? `Bill ${result.bill_number} created successfully`
+      : "Bill created successfully"
+  );
+
+  setCreatedBill(result);
+  setShowBillActions(true);
+  setCreatingBill(false);
+};
+
+const finishBilling = () => {
+  setShowBillActions(false);
+  setCreatedBill(null);
+
+  setPatientName("");
+  setPatientPhone("");
+  setDoctorName("");
+  setPaymentMode("Cash");
+  setOverallDiscount(0);
+  setItems([]);
+  setSelected(null);
+  setBatches([]);
+  setQuery("");
+  setMedicines([]);
+};
+
+const saveBillOnly = () => {
+  toast.success(
+    createdBill?.bill_number
+      ? `Bill ${createdBill.bill_number} saved`
+      : "Bill saved"
+  );
+
+  finishBilling();
+};
+
+const printCreatedBill = async () => {
+  if (!createdBill?.bill_id) {
+    toast.error("Unable to identify the created bill");
+    return;
+  }
+
+  setPrintingBill(true);
+
+  const [
+    { data: billData, error: billError },
+    { data: pharmacy, error: pharmacyError },
+  ] = await Promise.all([
+    api.getBillDetails(createdBill.bill_id),
+    api.getPharmacyDetails(),
+  ]);
+
+  if (billError) {
+    console.error(
+      "get_bill_details error:",
+      billError
+    );
+
+    toast.error(
+      billError.message ||
+        "Unable to load bill for printing"
+    );
+
+    setPrintingBill(false);
+    return;
+  }
+
+  if (pharmacyError) {
+    console.error(
+      "get_pharmacy_details error:",
+      pharmacyError
+    );
+
+    toast.error(
+      pharmacyError.message ||
+        "Unable to load pharmacy details"
+    );
+
+    setPrintingBill(false);
+    return;
+  }
+
+  setPrintData({
+    billData,
+    pharmacy,
+  });
+
+  setPrintingBill(false);
+  setShowBillActions(false);
+
+  setTimeout(() => {
+    window.print();
+    setShowBillActions(true);
+  }, 100);
+};
+
 
   return (
     <div className="page">
@@ -672,6 +758,29 @@ function Billing() {
             required
           />
         </label>
+        {/* <label>
+  Patient name
+  <input
+    data-testid="patient-name-input"
+    value={patientName}
+    onChange={(e) => setPatientName(e.target.value)}
+    placeholder="Patient name"
+    required
+  />
+</label> */}
+
+        <label>
+          Patient phone
+          <input
+            data-testid="patient-phone-input"
+            type="tel"
+            value={patientPhone}
+            onChange={(e) => setPatientPhone(e.target.value)}
+            placeholder="Phone number"
+          />
+        </label>
+
+
 
         <label>
           Doctor name
@@ -1257,6 +1366,258 @@ function Billing() {
           </button>
         </div>
       </section>
+      {showBillActions && (
+        <div className="overlay">
+          <section
+            className="modal bill-action-modal"
+            data-testid="bill-action-modal"
+          >
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow">BILL CREATED</p>
+  
+                <h2>
+                  {createdBill?.bill_number ||
+                    "Bill created successfully"}
+                </h2>
+              </div>
+  
+              <button
+                className="icon-button"
+                data-testid="close-bill-action-modal"
+                onClick={saveBillOnly}
+              >
+                <X size={18} />
+              </button>
+            </div>
+  
+            <div className="bill-action-content">
+              <p>
+                What would you like to do with this bill?
+              </p>
+  
+              <button
+                className="primary-button bill-action-button"
+                data-testid="print-bill-button"
+                onClick={printCreatedBill}
+                disabled={printingBill}
+              >
+                <Printer size={17} />
+
+                  <span>
+                    {printingBill
+                      ? "Preparing bill…"
+                      : "Print the bill"}
+                  </span>
+              </button>         
+              <button
+                className="secondary-button bill-action-button"
+                data-testid="send-whatsapp-button"
+                onClick={() => {
+                  // WhatsApp will be connected later.
+                  toast.info("WhatsApp sending will be connected next");
+                }}
+              >
+                💬
+                <span>Send via WhatsApp</span>
+              </button>
+  
+              <button
+                className="secondary-button bill-action-button"
+                data-testid="save-bill-button"
+                onClick={saveBillOnly}
+              >
+                ✓
+                <span>Save bill only</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {printData && (
+        <PrintableBill
+          billData={printData.billData}
+          pharmacy={printData.pharmacy}
+        />
+      )}
+    </div>
+  );
+}
+
+function PrintableBill({ billData, pharmacy }) {
+  if (!billData?.bill) return null;
+
+  const bill = billData.bill;
+  const items = billData.items || [];
+
+  const money = (value) =>
+    `₹${Number(value || 0).toFixed(2)}`;
+
+  const formatDate = (value) => {
+    if (!value) return "—";
+
+    return new Date(value).toLocaleDateString(
+      "en-IN",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }
+    );
+  };
+
+  return (
+    <div
+      className="printable-bill"
+      data-testid="printable-bill"
+    >
+      <div className="print-pharmacy-header">
+        <h1>
+          {pharmacy?.pharmacy_name ||
+            "PHARMACY NAME"}
+        </h1>
+
+        <div>
+          {pharmacy?.address || "Address"}
+        </div>
+
+        <div>
+          {pharmacy?.phone
+            ? `Phone: ${pharmacy.phone}`
+            : ""}
+          {pharmacy?.email
+            ? ` | ${pharmacy.email}`
+            : ""}
+        </div>
+
+        {(pharmacy?.gstin_tax_id ||
+          pharmacy?.drug_license) && (
+          <div>
+            {pharmacy?.gstin_tax_id
+              ? `GSTIN / Tax ID: ${pharmacy.gstin_tax_id}`
+              : ""}
+
+            {pharmacy?.drug_license
+              ? ` | Drug License: ${pharmacy.drug_license}`
+              : ""}
+          </div>
+        )}
+      </div>
+
+      <div className="print-divider" />
+
+      <div className="print-bill-meta">
+        <div>
+          <strong>Bill No:</strong>{" "}
+          {bill.bill_number}
+        </div>
+
+        <div>
+          <strong>Date:</strong>{" "}
+          {formatDate(bill.created_at)}
+        </div>
+      </div>
+
+      <div className="print-patient">
+        <div>
+          <strong>Patient:</strong>{" "}
+          {bill.patient_name || "—"}
+        </div>
+
+        <div>
+          <strong>Phone:</strong>{" "}
+          {bill.patient_phone || "—"}
+        </div>
+
+        <div>
+          <strong>Doctor:</strong>{" "}
+          {bill.doctor_name || "—"}
+        </div>
+      </div>
+
+      <div className="print-divider" />
+
+      <table className="print-items-table">
+        <thead>
+          <tr>
+            <th>Medicine</th>
+            <th>Qty</th>
+            <th>Rate</th>
+            <th>Batch / Expiry</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {items.map((item, index) => (
+            <tr key={item.id || index}>
+              <td>{item.medicine_name}</td>
+
+              <td>{item.quantity}</td>
+
+              <td>
+                {money(item.unit_price)}
+              </td>
+
+              <td>
+                {item.batch_number || "—"}
+                {item.expiry_date
+                  ? ` / ${item.expiry_date}`
+                  : ""}
+              </td>
+
+              <td>
+                {money(item.line_total)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="print-divider" />
+
+      <div className="print-totals">
+        <div>
+          <span>Subtotal</span>
+          <strong>
+            {money(bill.subtotal)}
+          </strong>
+        </div>
+
+        <div>
+          <span>GST</span>
+          <strong>
+            {money(bill.gst_amount)}
+          </strong>
+        </div>
+
+        {Number(bill.discount_amount || 0) > 0 && (
+          <div>
+            <span>Discount</span>
+            <strong>
+              -{money(bill.discount_amount)}
+            </strong>
+          </div>
+        )}
+
+        <div className="print-total">
+          <span>TOTAL</span>
+          <strong>
+            {money(bill.total_amount)}
+          </strong>
+        </div>
+      </div>
+
+      <div className="print-divider" />
+
+      <div className="print-payment">
+        <strong>Payment:</strong>{" "}
+        {bill.payment_mode}
+      </div>
+
+      <div className="print-thanks">
+        Thank you for your visit!
+      </div>
     </div>
   );
 }
@@ -3001,6 +3362,12 @@ function Tracker() {
                     <span>Patient</span>
                     <strong>
                       {selectedBill.bill.patient_name}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Phone</span>
+                    <strong>
+                      {selectedBill.bill.patient_phone || "—"}
                     </strong>
                   </div>
 
