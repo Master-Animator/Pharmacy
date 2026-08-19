@@ -84,4 +84,14 @@ export const api = {
     callSingle("get_bill_returns", {
       p_bill_id: billId,
   }),
+  getWhatsAppSettings: () =>
+    callSingle("get_whatsapp_settings"),
+
+  updateWhatsAppSettings: (payload) =>
+    call("update_whatsapp_settings", {
+      p_phone_number: payload.phone_number,
+      p_phone_number_id: payload.phone_number_id,
+      p_business_account_id:
+        payload.business_account_id,
+    }),
 };

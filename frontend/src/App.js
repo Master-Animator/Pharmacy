@@ -1,3 +1,5 @@
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { api } from "@/lib/api";
@@ -41,6 +43,98 @@ const getValue = (item, keys, fallback = "—") => {
   }
   return fallback;
 };
+
+const buildWhatsAppBillMessage = (
+    billData,
+    pharmacy
+  ) => {
+    if (!billData?.bill) {
+      return "";
+    }
+
+    const bill = billData.bill;
+    const items = billData.items || [];
+
+    const money = (value) =>
+      `₹${Number(value || 0).toFixed(2)}`;
+
+    const formatDate = (value) => {
+      if (!value) return "—";
+
+      return new Date(value).toLocaleDateString(
+        "en-IN",
+        {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }
+      );
+    };
+
+    const medicineLines = items
+      .map((item) => {
+        const batch = item.batch_number
+          ? `\n  Batch: ${item.batch_number}`
+          : "";
+
+        const expiry = item.expiry_date
+          ? ` | Exp: ${item.expiry_date}`
+          : "";
+
+        return (
+          `• ${item.medicine_name} × ${item.quantity}` +
+          ` — ${money(item.line_total)}` +
+          `${batch}${expiry}`
+        );
+      })
+      .join("\n");
+
+    return [
+      pharmacy?.pharmacy_name ||
+        "PHARMACY",
+
+      "",
+
+      `Bill No: ${bill.bill_number || "—"}`,
+      `Date: ${formatDate(bill.created_at)}`,
+
+      "",
+
+      `Patient: ${bill.patient_name || "—"}`,
+      `Age: ${bill.patient_age ?? "—"}`,
+      `Gender: ${bill.patient_gender || "—"}`,
+      `Doctor: ${bill.doctor_name || "—"}`,
+
+      "",
+
+      "Medicines:",
+      medicineLines || "• No items",
+
+      "",
+
+      `Subtotal: ${money(bill.subtotal)}`,
+      `GST: ${money(bill.gst_amount)}`,
+
+      Number(bill.discount_amount || 0) > 0
+        ? `Discount: -${money(
+            bill.discount_amount
+          )}`
+        : null,
+
+      `TOTAL: ${money(bill.total_amount)}`,
+
+      "",
+
+      `Payment: ${bill.payment_mode || "—"}`,
+
+      "",
+
+      "Thank you for your visit!",
+      "Get Well Soon! 🙏",
+    ]
+      .filter((line) => line !== null)
+      .join("\n");
+  };
 
 function Login({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -292,6 +386,8 @@ function Billing() {
 
   const [patientName, setPatientName] = useState("");
   const [patientPhone, setPatientPhone] = useState("");
+  const [patientAge, setPatientAge] = useState("");
+  const [patientGender, setPatientGender] = useState("");
   const [doctorName, setDoctorName] = useState("");
   const [paymentMode, setPaymentMode] = useState("Cash");
   const [overallDiscount, setOverallDiscount] = useState(0);
@@ -569,6 +665,8 @@ function Billing() {
 
   const canGenerateBill =
     patientName.trim().length > 0 &&
+    patientAge !== "" &&
+    patientGender !== "" &&
     items.length > 0 &&
     !creatingBill;
 
@@ -577,7 +675,22 @@ function Billing() {
     toast.error("Patient name is required");
     return;
   }
+  const age = Number(patientAge);
 
+  if (
+    patientAge === "" ||
+    !Number.isInteger(age) ||
+    age < 0 ||
+    age > 150
+  ) {
+    toast.error("Patient age must be a valid whole number between 0 and 150");
+    return;
+  }
+
+  if (!patientGender) {
+    toast.error("Patient gender is required");
+    return;
+  }
   if (!items.length) {
     toast.error("Add at least one medicine");
     return;
@@ -605,6 +718,8 @@ function Billing() {
     await supabase.rpc("create_bill", {
       p_patient_name: patientName.trim(),
       p_patient_phone: patientPhone.trim() || null,
+      p_patient_age: Number(patientAge),
+      p_patient_gender: patientGender,
       p_doctor_name:
         doctorName.trim() || null,
       p_payment_mode: paymentMode,
@@ -647,6 +762,8 @@ const finishBilling = () => {
 
   setPatientName("");
   setPatientPhone("");
+  setPatientAge("");
+  setPatientGender("");
   setDoctorName("");
   setPaymentMode("Cash");
   setOverallDiscount(0);
@@ -780,7 +897,37 @@ const printCreatedBill = async () => {
           />
         </label>
 
+        <label>
+          Patient age
+          <input
+            data-testid="patient-age-input"
+            type="number"
+            min="0"
+            max="150"
+            step="1"
+            value={patientAge}
+            onChange={(e) =>
+              setPatientAge(e.target.value)
+            }
+            placeholder="Age"
+            required
+          />
+        </label>
 
+        <label>
+          Patient gender
+          <select
+            data-testid="patient-gender-select"
+            value={patientGender}
+            onChange={(e) => setPatientGender(e.target.value)}
+            required
+          >
+            <option value="">Select gender</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+        </label>
 
         <label>
           Doctor name
@@ -1525,6 +1672,16 @@ function PrintableBill({ billData, pharmacy }) {
         </div>
 
         <div>
+          <strong>Age:</strong>{" "}
+          {bill.patient_age ?? "--"}
+        </div>
+
+        <div>
+          <strong> Gender:</strong>{" "}
+          {bill.patient_gender || "--"}
+        </div>
+
+        <div>
           <strong>Phone:</strong>{" "}
           {bill.patient_phone || "—"}
         </div>
@@ -1616,7 +1773,7 @@ function PrintableBill({ billData, pharmacy }) {
       </div>
 
       <div className="print-thanks">
-        Thank you for your visit!
+        Thank you for your visit! Get Well Soon!
       </div>
     </div>
   );
@@ -2808,6 +2965,8 @@ function Tracker() {
   const [returningBill, setReturningBill] = useState(false);
   const [billReturns, setBillReturns] = useState([]);
   const [returnsLoading, setReturnsLoading] = useState(false);
+  const [printingBill, setPrintingBill] = useState(false);
+  const [trackerPrintData, setTrackerPrintData] = useState(null);
   const loadBills = async () => {
     setLoading(true);
 
@@ -2893,6 +3052,67 @@ function Tracker() {
 
     setDetailsLoading(false);
     setReturnsLoading(false);
+  };
+
+  const printBill = async () => {
+    const billId = selectedBill?.bill?.id;
+
+    if (!billId) {
+      toast.error("Unable to identify the bill");
+      return;
+    }
+
+    setPrintingBill(true);
+
+    const [
+      { data: billData, error: billError },
+      { data: pharmacy, error: pharmacyError },
+    ] = await Promise.all([
+      api.getBillDetails(billId),
+      api.getPharmacyDetails(),
+    ]);
+
+    if (billError) {
+      console.error(
+        "get_bill_details error:",
+        billError
+      );
+
+      toast.error(
+        billError.message ||
+          "Unable to load bill for printing"
+      );
+
+      setPrintingBill(false);
+      return;
+    }
+
+    if (pharmacyError) {
+      console.error(
+        "get_pharmacy_details error:",
+        pharmacyError
+      );
+
+      toast.error(
+        pharmacyError.message ||
+          "Unable to load pharmacy details"
+      );
+
+      setPrintingBill(false);
+      return;
+    }
+
+    setTrackerPrintData({
+      billData,
+      pharmacy,
+    });
+
+    setPrintingBill(false);
+
+    setTimeout(() => {
+      window.print();
+      setTrackerPrintData(null);
+    }, 100);
   };
 
   const confirmVoidBill = async () => {
@@ -3364,6 +3584,21 @@ function Tracker() {
                       {selectedBill.bill.patient_name}
                     </strong>
                   </div>
+                  
+                  <div>
+                    <span>Age</span>
+                    <strong>
+                      {selectedBill.bill.patient_age ?? "—"}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Gender</span>
+                    <strong>
+                      {selectedBill.bill.patient_gender || "—"}
+                    </strong>
+                  </div>
+
                   <div>
                     <span>Phone</span>
                     <strong>
@@ -3561,7 +3796,17 @@ function Tracker() {
                     </strong>
                   </div>
                   <div>
-                    {selectedBill.bill?.status === "completed" && (
+                    <button 
+                      class-name="secondary-button"
+                      data-testid="print-bill-button"
+                      onClick={printBill}
+                      disabled={printingBill}
+                      >
+                        <Printer size={16} />
+                        {printingBill ? "Preparing…" : "Print bill"}
+                      </button>
+
+                      {selectedBill.bill?.status === "completed" && (
                           <div className="billing-actions">
                             <button
                               className="secondary-button"
@@ -3803,6 +4048,12 @@ function Tracker() {
           </section>
         </div>
       )}
+      {trackerPrintData && (
+        <PrintableBill
+          billData={trackerPrintData.billData}
+          pharmacy={trackerPrintData.pharmacy}
+        />
+      )}
     </div>
   );
 }
@@ -3822,7 +4073,115 @@ function PharmacyDetails() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const loadWhatsAppSettings = async () => {
+    setWhatsAppLoading(true);
 
+    const { data, error } = 
+      await api.getWhatsAppSettings();
+
+    console.log(
+      "whatsapp response",
+      data
+    )
+
+    console.log(
+      " whatsapp error",
+      error
+      )
+    if (error) {
+      console.error(
+        "get_whatsapp_settings error:",
+        error
+      );
+
+      toast.error(
+        error.message ||
+          "Unable to load WhatsApp settings"
+      );
+
+      setWhatsAppLoading(false);
+      return;
+    }
+
+    if (data?.exists === false) {
+      setWhatsAppSettings({
+        phone_number: "",
+        phone_number_id: "",
+        business_account_id: "",
+        connection_status: "not_configured",
+      });
+    } else {
+      setWhatsAppSettings({
+        phone_number:
+          data.phone_number || "",
+        phone_number_id:
+          data.phone_number_id || "",
+        business_account_id:
+          data.business_account_id || "",
+        connection_status:
+          data.connection_status ||
+          "not_configured",
+      });
+    }
+
+    setWhatsAppLoading(false);
+  };
+  const [showWhatsAppConfig, setShowWhatsAppConfig] =
+    useState(false);
+
+    const [whatsappSettings, setWhatsAppSettings] =
+      useState({
+        phone_number: "",
+        phone_number_id: "",
+        business_account_id: "",
+        connection_status: "not_configured",
+      });
+
+    const [whatsappLoading, setWhatsAppLoading] =
+      useState(false);
+
+    const [whatsappSaving, setWhatsAppSaving] =
+      useState(false);
+    const saveWhatsAppSettings = async () => {
+      setWhatsAppSaving(true);
+
+      const { data, error } =
+        await api.updateWhatsAppSettings({
+          phone_number:
+            whatsappSettings.phone_number.trim(),
+
+          phone_number_id:
+            whatsappSettings.phone_number_id.trim(),
+
+          business_account_id:
+            whatsappSettings.business_account_id.trim(),
+        });
+
+      if (error) {
+        console.error(
+          "update_whatsapp_settings error:",
+          error
+        );
+
+        toast.error(
+          error.message ||
+            "Unable to save WhatsApp settings"
+        );
+
+        setWhatsAppSaving(false);
+        return;
+      }
+
+      toast.success(
+        data?.message ||
+          "WhatsApp settings saved successfully"
+      );
+
+      await loadWhatsAppSettings();
+
+      setWhatsAppSaving(false);
+      setShowWhatsAppConfig(false);
+    };
   const loadDetails = async () => {
     setLoading(true);
 
@@ -4176,6 +4535,16 @@ function PharmacyDetails() {
               ? "Saving details…"
               : "Save details"}
           </button>
+
+          <button
+            className="secondary-button"
+            onClick={() => {
+              setShowWhatsAppConfig(true);
+              loadWhatsAppSettings();
+            }}
+          >
+            Configure WhatsApp
+          </button>
         </div>
       </section>
 
@@ -4220,6 +4589,149 @@ function PharmacyDetails() {
                 Yes, save details
               </button>
             </div>
+          </section>
+        </div>
+      )}
+      {showWhatsAppConfig && (
+        <div className="overlay">
+          <section className="modal">
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow">
+                  WHATSAPP BUSINESS
+                </p>
+
+                <h2>Configure WhatsApp</h2>
+              </div>
+
+              <button
+                className="icon-button"
+                onClick={() =>
+                  setShowWhatsAppConfig(false)
+                }
+                disabled={whatsappSaving}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {whatsappLoading ? (
+              <div className="inline-state">
+                Loading WhatsApp settings…
+              </div>
+            ) : (
+              <>
+                <p className="pending-note">
+                  These details are used to connect
+                  this pharmacy to its WhatsApp Business
+                  account. You can configure them now
+                  and connect the account later.
+                </p>
+
+                <div className="modal-form">
+                  <label>
+                    WhatsApp number
+
+                    <input
+                      type="tel"
+                      value={
+                        whatsappSettings.phone_number
+                      }
+                      onChange={(e) =>
+                        setWhatsAppSettings(
+                          (current) => ({
+                            ...current,
+                            phone_number:
+                              e.target.value,
+                          })
+                        )
+                      }
+                      placeholder="+91XXXXXXXXXX"
+                    />
+                  </label>
+
+                  <label>
+                    Phone Number ID
+
+                    <input
+                      value={
+                        whatsappSettings.phone_number_id
+                      }
+                      onChange={(e) =>
+                        setWhatsAppSettings(
+                          (current) => ({
+                            ...current,
+                            phone_number_id:
+                              e.target.value,
+                          })
+                        )
+                      }
+                      placeholder="Meta Phone Number ID"
+                    />
+                  </label>
+
+                  <label>
+                    WhatsApp Business Account ID
+
+                    <input
+                      value={
+                        whatsappSettings.business_account_id
+                      }
+                      onChange={(e) =>
+                        setWhatsAppSettings(
+                          (current) => ({
+                            ...current,
+                            business_account_id:
+                              e.target.value,
+                          })
+                        )
+                      }
+                      placeholder="Meta Business Account ID"
+                    />
+                  </label>
+
+                  <div className="detail-facts">
+                    <div>
+                      <span>Status</span>
+
+                      <strong>
+                        {whatsappSettings.connection_status ===
+                        "connected"
+                          ? "Connected"
+                          : whatsappSettings.connection_status ===
+                            "disconnected"
+                          ? "Not connected"
+                          : "Not configured"}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="billing-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() =>
+                        setShowWhatsAppConfig(false)
+                      }
+                      disabled={whatsappSaving}
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={saveWhatsAppSettings}
+                      disabled={whatsappSaving}
+                    >
+                      {whatsappSaving
+                        ? "Saving…"
+                        : "Save WhatsApp settings"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </section>
         </div>
       )}
