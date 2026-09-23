@@ -901,7 +901,7 @@ button {
   .mobile-nav {
     position: fixed;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     bottom: 0;
     left: 0;
     right: 0;

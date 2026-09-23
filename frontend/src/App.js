@@ -351,6 +351,14 @@ function Shell({
             <span>{label}</span>
           </button>
         ))}
+        <button
+          className="mobile-logout-button"
+          data-testid="mobile-logout-button"
+          onClick={onLogout}
+          >
+          <LogOut size={18} />
+          <span>Log out</span>
+          </button>
       </nav>
     </div>
   );
