@@ -491,6 +491,13 @@ function Billing() {
       currentItems.map((item, i) => {
         if (i !== index) return item;
 
+        if (value === "") {
+          return {
+            ...item,
+            [field]: "",
+          };
+        }
+
         const numeric = Number(value);
 
         const max =
@@ -508,7 +515,7 @@ function Billing() {
                 )
               );
 
-        const minimum = field === "quantity" ? 1 : 0;
+        const minimum = 0;
 
         return {
           ...item,
