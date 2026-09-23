@@ -716,6 +716,62 @@ button {
 .inventory-toolbar .search-wrap {
   flex: 1;
 }
+.inventory-filter-panel {
+    margin-top: 18px;
+    margin-bottom: 28px;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+    box-shadow: 0 8px 25px #17211d0d;
+  }
+
+  .inventory-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .inventory-filter-row label {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .inventory-filter-row select {
+    min-width: 190px;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 7px;
+    padding: 0px 0px;
+    color: var(--ink);
+    font-size: 12px;
+    outline: none;
+    transition:
+      border-color 0.2s,
+      box-shadow 0.2s;
+  }
+
+  .inventory-filter-row select:focus {
+    border-color: #70a78f;
+    box-shadow: 0 0 0 3px #e3f2eb;
+  }
+
+  .filter-clear-button {
+    border: 0;
+    background: none;
+    color: var(--green);
+    padding: 7px 4px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .filter-clear-button:hover {
+    color: var(--green-dark);
+  }
 .medicine-cell {
   display: flex;
   align-items: center;
@@ -974,6 +1030,7 @@ button {
   .inventory-toolbar .secondary-button {
     padding-inline: 11px;
   }
+  
   .drawer {
     padding: 24px 19px;
   }

@@ -1797,6 +1797,8 @@ function PrintableBill({ billData, pharmacy }) {
 function Inventory() {
   const [medicines, setMedicines] = useState([]);
   const [query, setQuery] = useState("");
+  const [packFilter, setPackFilter] = useState("All");
+  const [showPackFilter, setShowPackFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [batches, setBatches] = useState([]);
@@ -1828,6 +1830,18 @@ function Inventory() {
   useEffect(() => {
     load();
   }, []);
+
+  const filteredMedicines =
+    packFilter === "All"
+      ? medicines
+      : medicines.filter(
+          (medicine) =>
+            getValue(
+              medicine,
+              ["pack_type", "packType"],
+              ""
+            ) === packFilter
+        );
 
   const openMedicine = async (medicine) => {
     setSelected(medicine);
@@ -1902,17 +1916,53 @@ function Inventory() {
         <button
           className="secondary-button"
           data-testid="inventory-filter-button"
+          onClick={() => setShowPackFilter((current) => !current)}
         >
           <SlidersHorizontal size={16} />
           Filters
         </button>
+
+        {showPackFilter && (
+          <div className="inventory-filter-panel">
+            <div className="inventory-filter-row">
+              <label htmlFor="pack-type-filter">
+                Pack type
+              </label>
+
+              <select
+                id="pack-type-filter"
+                value={packFilter}
+                onChange={(e) => setPackFilter(e.target.value)}
+              >
+                <option value="All">All pack types</option>
+                <option value="Strip">Strip</option>
+                <option value="Cream/Ointment">Cream/Ointment</option>
+                <option value="Spray">Spray</option>
+                <option value="Powder">Powder</option>
+                <option value="Injection">Injection</option>
+                <option value="Syrup">Syrup</option>
+                <option value="Other">Other</option>
+              </select>
+
+              {packFilter !== "All" && (
+                <button
+                  type="button"
+                  className="filter-clear-button"
+                  onClick={() => setPackFilter("All")}
+                >
+                  Clear filter
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <section className="workspace-section inventory-section">
         <div className="section-heading">
           <div>
             <p className="eyebrow">MEDICINE CATALOG</p>
-            <h2>{medicines.length} medicines</h2>
+            <h2>{filteredMedicines.length} medicines</h2>
           </div>
 
           <span className="unit-note">
@@ -1942,7 +1992,7 @@ function Inventory() {
                   </td>
                 </tr>
               ) : medicines.length ? (
-                medicines.map((medicine, index) => (
+                filteredMedicines.map((medicine, index) => (
                   <tr
                     key={medicine.id || index}
                     data-testid={`inventory-row-${
